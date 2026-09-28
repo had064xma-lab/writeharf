@@ -1,7 +1,7 @@
 exports.handler = async (event) => {
-  const apiKey = process.env.GEMINI_API_KEY;
+  const apiKey = process.env.GROQ_API_KEY;
   if (!apiKey) {
-    return { statusCode: 500, body: JSON.stringify({ error: "GEMINI_API_KEY is not set." }) };
+    return { statusCode: 500, body: JSON.stringify({ error: "GROQ_API_KEY is not set." }) };
   }
 
   const isTest = event.httpMethod === "GET";
@@ -25,27 +25,27 @@ exports.handler = async (event) => {
     maxTokens = reqBody.max_tokens || 1000;
   }
 
-  const geminiBody = {
-    contents: [{ role: "user", parts: [{ text: userText }] }],
-    generationConfig: { maxOutputTokens: Math.max(maxTokens, 4096) },
-  };
-  if (system) {
-    geminiBody.systemInstruction = { parts: [{ text: system }] };
-  }
+  const messages = [];
+  if (system) messages.push({ role: "system", content: system });
+  messages.push({ role: "user", content: userText });
 
-  const models = ["gemini-3.1-flash-lite", "gemini-3.5-flash", "gemini-3-flash-preview"];
+  const models = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"];
   const errors = [];
 
   for (const model of models) {
     try {
-      const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(geminiBody),
-        }
-      );
+      const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: "Bearer " + apiKey,
+        },
+        body: JSON.stringify({
+          model,
+          messages,
+          max_tokens: Math.min(Math.max(maxTokens, 1024), 8000),
+        }),
+      });
       const data = await response.json();
 
       if (!response.ok) {
@@ -53,8 +53,7 @@ exports.handler = async (event) => {
         continue;
       }
 
-      const parts = data.candidates?.[0]?.content?.parts || [];
-      const text = parts.filter((p) => p.text && !p.thought).map((p) => p.text).join("");
+      const text = data.choices?.[0]?.message?.content || "";
       if (!text) {
         errors.push(model + ": empty response");
         continue;
