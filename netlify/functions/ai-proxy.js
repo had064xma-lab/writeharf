@@ -1,16 +1,3 @@
-// Netlify Function: proxies requests to Google's Gemini API (FREE tier,
-// no credit card required) so the app's site code needs zero changes.
-//
-// The client always sends/expects Anthropic-shaped JSON:
-//   request:  { model, max_tokens, system, messages: [{role:"user", content}] }
-//   response: { content: [{ type: "text", text: "..." }] }
-// This function translates that to/from Gemini's own API shape internally.
-//
-// Setup on Netlify:
-//   1. Get a free key at https://aistudio.google.com/apikey (Google account only, no billing).
-//   2. Site settings -> Environment variables -> add GEMINI_API_KEY
-//   3. Deploy.
-
 exports.handler = async (event) => {
   if (event.httpMethod !== "POST") {
     return { statusCode: 405, body: "Method Not Allowed" };
@@ -33,14 +20,14 @@ exports.handler = async (event) => {
     return { statusCode: 400, body: "Invalid JSON body" };
   }
 
-  const geminiModel = "gemini-2.5-flash"; // free tier, generous daily quota
+  const geminiModel = "gemini-3.1-flash-lite";
   const userText =
     (reqBody.messages && reqBody.messages[0] && reqBody.messages[0].content) || "";
 
   const geminiBody = {
     contents: [{ role: "user", parts: [{ text: userText }] }],
     generationConfig: {
-      maxOutputTokens: reqBody.max_tokens || 1000,
+      maxOutputTokens: Math.max(reqBody.max_tokens || 1000, 2048),
     },
   };
   if (reqBody.system) {
@@ -67,10 +54,8 @@ exports.handler = async (event) => {
       };
     }
 
-    const text =
-      data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
 
-    // Reshape into the Anthropic-style response the client already expects.
     return {
       statusCode: 200,
       headers: {
